@@ -3,17 +3,28 @@ import numpy as np 				# We assume that numpy arrays will be used
 import os
 from data_io import vprint
 import time
+from sklearn import decomposition
+import statsmodels.tsa.api as smtsa
+import matplotlib.pyplot as plt
 
 class Model():
     def __init__(self, hyper_param=(), path="", verbose=False):
         ''' Define whatever data member you need (model paramaters and hyper-parameters).
         hyper_param is a tuple.
         path specifies the directory where models are saved/loaded.'''
-        self.version="Persitent"
-        self.hyper_param=()
+        self.version="NMF"
+        self.hyper_param=hyper_param
         self.model_dir = path
         self.verbose = verbose
+        self.model = decomposition.NMF(3, init = "random")
         vprint(self.verbose, "Version = " + self.version)
+
+    def reshape_and_fit(self, X, T=[], n_components = 10):
+
+        self.model = decomposition.NMF(n_components, init = "random")
+        n_frames, n_x, n_y = X.shape
+        reshaped_X = X.reshape((n_frames, n_x * n_y))
+        self.model.fit(reshaped_X)
 
     def train(self, Xtrain, Ttrain=[]):
         '''  Adjust parameters with training data.
@@ -23,6 +34,7 @@ class Model():
         vprint(self.verbose, "Model :: ========= Training model =========")
         start = time.time()
         # Do something
+
         end = time.time()
         vprint(self.verbose, "[+] Success, model trained in %5.2f sec" % (end - start))
 
@@ -35,6 +47,7 @@ class Model():
         vprint(self.verbose, "Model :: ========= Adapting model =========")
         start = time.time()
         # Do something
+
         end = time.time()
         vprint(self.verbose, "[+] Success, model adapted in %5.2f sec" % (end - start))
          
@@ -43,7 +56,35 @@ class Model():
         For this example we predict persistence of the last frame.'''
         vprint(self.verbose, "Model :: ========= Making predictions =========")
         start = time.time()
-        Ytest = np.array([Xtest[-1]] * num_predicted_frames)
+        # Ytest = np.array([Xtest[-1]] * num_predicted_frames)
+
+        n_frames = min(100, Xtest.shape[0])
+        self.reshape_and_fit(X = Xtest[-n_frames:])
+
+        n_frames, n_x, n_y = Xtest.shape
+        reshaped_Xtest = Xtest.reshape((n_frames, n_x * n_y))
+
+
+        weights = self.model.transform(reshaped_Xtest)
+        vprint(self.verbose, "Xdim %5.2f" % weights.shape[0])
+        vprint(self.verbose, "Ydim %5.2f" % weights.shape[1])
+        # for i in range(weights.shape[1]):
+            # plt.plot(weights[0:(weights.shape[0] - 1),i])
+
+
+        weight_model = smtsa.VAR(weights)
+        results = weight_model.fit(1)
+
+        # print results.summary()
+        # results.plot()
+        # results.plot_acorr()
+
+        Y_weights = results.forecast(weights, num_predicted_frames)
+        reshaped_Ytest = self.model.inverse_transform(Y_weights)
+        Ytest = reshaped_Ytest.reshape((num_predicted_frames, n_x, n_y))
+
+        print Ytest.shape
+
         end = time.time()
         vprint(self.verbose, "[+] Success, predictions made in %5.2f sec" % (end - start))
         return Ytest
